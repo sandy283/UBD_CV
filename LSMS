@@ -1,0 +1,146 @@
+import os
+import numpy as np
+import cv2
+from tensorflow import keras
+from tensorflow.keras import layers
+from skimage import io, color, exposure, segmentation
+import matplotlib.pyplot as plt
+from glob import glob
+
+# Define the paths to the image and mask folders
+image_folder = r'F:\UBD_CV\UNET\images'
+mask_folder = r'F:\UBD_CV\UNET\masks'
+
+# Function to load and preprocess images and masks
+def load_data(image_folder, mask_folder, num_images):
+    images = []
+    masks = []
+    seg_masks = []
+
+    # List and sort the image files
+    image_files = sorted(glob(os.path.join(image_folder, '*.jpg')))
+    mask_files = sorted(glob(os.path.join(mask_folder, '*.jpg')))
+
+    for i in range(num_images):
+        image_path = image_files[i]
+        mask_path = mask_files[i]
+
+        # Read the image for mean shift segmentation
+        img = io.imread(image_path)
+        img_lab = color.rgb2lab(img)
+        img_lab = exposure.rescale_intensity(img_lab, in_range=(0, 1))
+        seg_mask = segmentation.felzenszwalb(img_lab, scale=6, sigma=4.5, min_size=1000)
+
+        image = cv2.imread(image_path)
+        mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+
+        # Preprocess images and masks as needed
+        image = image / 255.0  # Normalize images to the range [0, 1]
+        mask = mask / 255.0  # Normalize masks to the range [0, 1]
+
+        images.append(image)
+        masks.append(mask)
+        seg_masks.append(seg_mask)
+
+    return np.array(images), np.array(masks), np.array(seg_masks)
+
+def dice_coef(y_true, y_pred, smooth=1):
+    y_true_flat = keras.backend.flatten(y_true)
+    y_pred_flat = keras.backend.flatten(y_pred)
+    
+    intersection = keras.backend.sum(y_true_flat * y_pred_flat)
+    union = keras.backend.sum(y_true_flat) + keras.backend.sum(y_pred_flat)
+    
+    dice = (2. * intersection + smooth) / (union + smooth)
+    return dice
+
+def dice_loss(y_true, y_pred):
+    return 1 - dice_coef(y_true, y_pred)
+
+# Load training data
+num_training_images = 120
+images, masks, seg_masks = load_data(image_folder, mask_folder, num_training_images)
+
+seg_output_folder = r'F:\UBD_CV\UNET\segmented_images_mean_shift'
+os.makedirs(seg_output_folder, exist_ok=True)
+for i in range(num_training_images):
+    segmented_image = seg_masks[i]
+    seg_output_path = os.path.join(seg_output_folder, f'segmented_image_{i + 1}.jpg')
+    plt.imsave(seg_output_path, segmented_image, cmap='gray')
+    print(f"Segmented image from mean shift saved: {seg_output_path}")
+
+# Add mean shift segmentation mask as an additional channel
+images_with_seg = np.concatenate([images, seg_masks[..., None]], axis=-1)
+
+# Define the model
+model = keras.Sequential([
+    layers.Input(shape=(None, None, 4)),  # Allow variable image size with segmentation mask
+    # Add your desired convolutional layers for feature extraction
+    layers.Conv2D(64, (3, 3), activation='relu', padding='same'),
+    layers.Conv2D(64, (3, 3), activation='relu', padding='same'),
+    # ... Add more layers as needed
+    # Use transposed convolutions to upsample the spatial resolution
+    layers.Conv2D(1, (1, 1), activation='sigmoid', padding='same')  # Modify this line
+])
+
+model.compile(optimizer='adam', loss=dice_loss, metrics=['accuracy', dice_coef])
+
+model.fit(images_with_seg, masks, epochs=50, batch_size=4, validation_split=0.1)
+
+model.save('model_with_mean_shift.h5')
+
+
+
+
+
+import cv2
+import numpy as np
+from tensorflow import keras
+from skimage import io, color, exposure, segmentation
+import matplotlib.pyplot as plt
+from glob import glob
+
+# Load the trained model
+model_path = 'segmentation_model_with_mean_shift.h5'
+trained_model = keras.models.load_model(model_path)
+
+# Define the path to the input image
+input_image_path = r'F:\UBD_CV\UNET\final_selected_images\selected_images\7_565.jpg'
+
+# Read and preprocess the input image
+input_image = io.imread(input_image_path)
+input_image_lab = color.rgb2lab(input_image)
+input_image_lab = exposure.rescale_intensity(input_image_lab, in_range=(0, 1))
+seg_mask = segmentation.felzenszwalb(input_image_lab, scale=6, sigma=4.5, min_size=1000)
+
+input_image = cv2.imread(input_image_path)
+input_image = input_image / 255.0  # Normalize to [0, 1]
+input_image_with_seg = np.concatenate([input_image, seg_mask[..., None]], axis=-1)
+input_image_with_seg = np.expand_dims(input_image_with_seg, axis=0)  # Add batch dimension
+
+# Make prediction
+predicted_mask = trained_model.predict(input_image_with_seg)
+
+# Threshold the predicted mask if needed
+threshold = 0.5  # You can adjust the threshold as needed
+binary_mask = (predicted_mask > threshold).astype(np.uint8)
+
+# Display the input image, mean shift segmentation, and the predicted mask
+plt.figure(figsize=(12, 4))
+
+plt.subplot(1, 3, 1)
+plt.imshow(input_image)
+plt.title('Input Image')
+plt.axis('off')
+
+plt.subplot(1, 3, 2)
+plt.imshow(seg_mask, cmap='nipy_spectral')
+plt.title('Mean Shift Segmentation')
+plt.axis('off')
+
+plt.subplot(1, 3, 3)
+plt.imshow(binary_mask[0, ..., 0], cmap='gray')
+plt.title('Predicted Mask')
+plt.axis('off')
+
+plt.show()
