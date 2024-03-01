@@ -1,32 +1,3 @@
-# https://youtu.be/UcHe0xiuvpg
-# https://youtu.be/6pUSZgPJ3Yg
-# https://youtu.be/my7LEgYTJto
-"""
-pix2pix GAN model
-
-Based on the code by Jason Brownlee from his blogs on https://machinelearningmastery.com/
-I seriously urge everyone to foloow his blogs and get enlightened. 
-I am adapting his code to various applications but original credit goes to Jason.
-
-
-    Original paper: https://arxiv.org/pdf/1611.07004.pdf
-    Github for original paper: https://phillipi.github.io/pix2pix/
-    
-
-Generator:    
-The encoder-decoder architecture consists of:
-encoder:
-C64-C128-C256-C512-C512-C512-C512-C512
-decoder:
-CD512-CD512-CD512-C512-C256-C128-C64
-
-
-Discriminator
-C64-C128-C256-C512
-After the last layer, a convolution is applied to map to
-a 1-dimensional output, followed by a Sigmoid function.    
-"""
-# 
 from numpy import zeros
 from numpy import ones
 from numpy.random import randint
@@ -43,24 +14,6 @@ from keras.layers import Dropout
 from keras.layers import BatchNormalization
 from matplotlib import pyplot as plt
 from tensorflow.keras.utils import plot_model
-
-
-#############################################################################
-#Define generator, discriminator, gan and other helper functions
-#We will use functional way of defining model and not sequential
-#as we have multiple inputs; both images and corresponding labels. 
-########################################################################
-
-#Since pix2pix is a conditional GAN, it takes 2 inputs - image and corresponding label
-#For pix2pix the label will be another image. 
-
-# define the standalone discriminator model
-#Given an input image, the Discriminator outputs the likelihood of the image being real.
-    #Binary classification - true or false (1 or 0). So using sigmoid activation.
-#Think of discriminator as a binary classifier that is classifying images as real/fake.
-
-# From the paper C64-C128-C256-C512
-#After the last layer, conv to 1-dimensional output, followed by a Sigmoid function.  
 
 def define_discriminator(image_shape):
     
@@ -109,12 +62,7 @@ def define_discriminator(image_shape):
 	model.compile(loss='binary_crossentropy', optimizer=opt, loss_weights=[0.5])
 	return model
 
-# disc_model = define_discriminator((256,256,3))
-# plot_model(disc_model, to_file='disc_model.png', show_shapes=True)
 
-##############################
-#Now define the generator - in our case we will define a U-net
-# define an encoder block to be used in generator
 def define_encoder_block(layer_in, n_filters, batchnorm=True):
 	# weight initialization
 	init = RandomNormal(stddev=0.02)
@@ -176,11 +124,6 @@ def define_generator(image_shape=(256,256,3)):
 	model = Model(in_image, out_image)
 	return model
 
-# gen_model = define_generator((256,256,3))
-# plot_model(gen_model, to_file='gen_model.png', show_shapes=True)
-
-
-# define the combined generator and discriminator model, for updating the generator
 def define_gan(g_model, d_model, image_shape):
 	# make weights in the discriminator not trainable
 	for layer in d_model.layers:
@@ -225,10 +168,6 @@ def generate_fake_samples(g_model, samples, patch_shape):
 	y = zeros((len(X), patch_shape, patch_shape, 1))
 	return X, y
 
-# generate samples and save as a plot and save the model
-#GAN models do not converge, we just want to find a good balance between
-#the generator and the discriminator. Therefore, it makes sense to periodically
-#save the generator model and check how good the generated image looks. 
 def summarize_performance(step, g_model, dataset, n_samples=3):
 	# select a sample of input images
 	[X_realA, X_realB], _ = generate_real_samples(dataset, n_samples, 1)
